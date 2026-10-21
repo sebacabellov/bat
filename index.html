@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>💩 Turnos del Baño</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💩</text></svg>">
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.16.1/dist/mqtt.min.js"></script>
+<style>
+:root{--bg1:#fff4e0;--bg2:#ffd9a8;--card:#ffffffd9;--ink:#3b2314;--mute:#8a6a55;--brown:#7b4a2a;--free:#22c55e;--busy:#ef4444;--line:#00000014;--shadow:0 10px 30px #7b4a2a33;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg1:#2a1810;--bg2:#4a2a18;--card:#3a2316d9;--ink:#fff1e0;--mute:#d2a98a;--brown:#e6a672;--line:#ffffff1a;--shadow:0 10px 30px #0006}}
+:root[data-theme="dark"]{--bg1:#2a1810;--bg2:#4a2a18;--card:#3a2316d9;--ink:#fff1e0;--mute:#d2a98a;--brown:#e6a672;--line:#ffffff1a;--shadow:0 10px 30px #0006}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{min-height:100vh;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:linear-gradient(160deg,var(--bg1),var(--bg2)) fixed;overflow-x:hidden}
+.bg{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.bg span{position:absolute;bottom:-60px;opacity:.18;animation:up var(--d,18s) linear infinite;animation-delay:var(--l,0s);user-select:none}
+@keyframes up{to{transform:translateY(-120vh) rotate(360deg)}}
+main{position:relative;z-index:1;max-width:560px;margin:0 auto;padding:20px 16px 40px}
+header{text-align:center;margin-bottom:16px}
+h1{margin:0;font-size:clamp(26px,7vw,36px);letter-spacing:-.5px}
+h1 .p{display:inline-block;animation:wob 2s ease-in-out infinite}
+@keyframes wob{50%{transform:rotate(14deg) scale(1.15)}}
+header p{margin:4px 0 0;color:var(--mute);font-size:14px}
+.card{background:var(--card);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px}
+.door{text-align:center;position:relative;overflow:hidden}
+.badge{display:inline-flex;align-items:center;gap:8px;padding:8px 18px;border-radius:999px;font-weight:800;letter-spacing:2px;color:#fff;font-size:15px;transition:background .4s}
+.free .badge{background:var(--free);box-shadow:0 0 0 0 #22c55e88;animation:pulse 1.8s infinite}
+.busy .badge{background:var(--busy)}
+@keyframes pulse{70%{box-shadow:0 0 0 16px #22c55e00}}
+.ring{position:relative;width:190px;height:190px;margin:16px auto 8px}
+.ring svg{transform:rotate(-90deg);width:100%;height:100%}
+.ring circle{fill:none;stroke-width:10;stroke-linecap:round}
+.ring .t{stroke:var(--line)}
+.ring .g{stroke:var(--busy);stroke-dasharray:326.7;stroke-dashoffset:0;transition:stroke-dashoffset 1s linear}
+.free .ring .g{stroke:var(--free);stroke-dashoffset:0!important}
+.ring .in{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.emo{font-size:58px;line-height:1}
+.busy .emo{animation:shake .5s infinite}
+@keyframes shake{25%{transform:translateX(-3px) rotate(-6deg)}75%{transform:translateX(3px) rotate(6deg)}}
+.time{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
+.sub{color:var(--mute);font-size:14px;min-height:22px}
+button{font:inherit;cursor:pointer;border:0;border-radius:16px;padding:16px 20px;font-weight:700;transition:transform .12s,opacity .2s}
+button:active{transform:scale(.97)}
+.btn-toggle-free{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;box-shadow:0 6px 20px #22c55e55;width:100%;font-size:18px}
+.btn-toggle-busy{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;box-shadow:0 6px 20px #ef444455;width:100%;font-size:18px}
+.btn-secondary{background:var(--line);color:var(--ink);padding:8px 14px;font-size:13px;border-radius:12px;margin-top:10px}
+.stats{display:flex;justify-content:space-around;text-align:center}
+.stats b{display:block;font-size:24px}
+.stats span{font-size:12px;color:var(--mute)}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,120px);background:var(--brown);color:#fff;padding:14px 22px;border-radius:16px;font-weight:700;z-index:99;transition:transform .4s cubic-bezier(.3,1.5,.5,1);max-width:90%;text-align:center;box-shadow:0 10px 25px rgba(0,0,0,.25);pointer-events:none}
+.toast.show{transform:translate(-50%,0)}
+.tm{position:absolute;top:14px;right:14px;background:var(--line);padding:8px 10px;border-radius:12px;font-size:16px;z-index:3}
+.sync-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;margin-top:6px}
+.sync-dot{width:8px;height:8px;border-radius:50%;background:#22c55e}
+.sync-dot.recon{background:#f59e0b}
+.sync-dot.offline{background:#ef4444}
+.timer-scale-hint{font-size:11px;color:var(--mute);margin-top:4px}
+</style>
+</head>
+<body>
+<div class="bg" id="bg"></div>
+<main>
+<header>
+<h1><span class="p">💩</span> Turnos del Baño <span class="p" style="animation-delay:.6s">🚽</span></h1>
+<p>Control rápido de estado libre / en uso en tiempo real</p>
+<div class="sync-badge">
+  <span class="sync-dot" id="syncDot"></span>
+  <span id="syncText">Sincronizando en tiempo real...</span>
+</div>
+</header>
+
+<section class="card door" id="door">
+<button class="tm" id="theme" aria-label="Cambiar tema">🌓</button>
+<span class="badge" id="badge"></span>
+<div class="ring">
+<svg viewBox="0 0 120 120"><circle class="t" cx="60" cy="60" r="52"/><circle class="g" id="arc" cx="60" cy="60" r="52"/></svg>
+<div class="in"><div class="emo" id="emo">🚽</div><div class="time" id="time">LIBRE</div></div>
+</div>
+<div class="sub" id="sub"></div>
+<div class="timer-scale-hint">⏱️ Escala del aro: 60 minutos</div>
+</section>
+
+<!-- Botón único para Libre <-> En uso -->
+<section class="card" style="text-align:center">
+<button id="toggleBtn" class="btn-toggle-free">🟢 Marcar como EN USO</button>
+<div style="margin-top:10px">
+  <button id="forceFreeBtn" class="btn-secondary">🔄 Forzar dejar libre</button>
+</div>
+</section>
+
+<section class="card stats">
+<div><b id="sServed">0</b><span>💩 visitas hoy</span></div>
+<div><b id="sNext">#1</b><span>🎟️ turno actual</span></div>
+</section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const C = 326.7;
+const MAX_MS = 60 * 60 * 1000; // 60 minutos
+const urlParams = new URLSearchParams(window.location.search);
+const ROOM = (urlParams.get('sala') || urlParams.get('room') || 'principal').toLowerCase();
+const TOPIC = 'turnos_bano_v4/' + ROOM;
+
+let S = { counter: 0, served: 0, current: null };
+let client = null;
+
+const $ = id => document.getElementById(id);
+const fmt = ms => {
+  ms = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(ms / 3600);
+  const m = Math.floor((ms % 3600) / 60);
+  const s = ms % 60;
+  if (h > 0) {
+    return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+};
+
+function toast(t) {
+  const e = $('toast');
+  e.textContent = t;
+  e.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => e.classList.remove('show'), 2800);
+}
+
+function updateSync(status) {
+  const dot = $('syncDot');
+  const txt = $('syncText');
+  if (status === 'connected') {
+    dot.className = 'sync-dot';
+    txt.textContent = '🌐 En vivo sincronizado (Sala: ' + ROOM + ')';
+  } else if (status === 'recon') {
+    dot.className = 'sync-dot recon';
+    txt.textContent = '🔄 Reconectando...';
+  } else {
+    dot.className = 'sync-dot offline';
+    txt.textContent = '📴 Modo local';
+  }
+}
+
+try {
+  const saved = localStorage.getItem('bano_simple_state_v4_' + ROOM);
+  if (saved) S = Object.assign({ counter: 0, served: 0, current: null }, JSON.parse(saved));
+} catch(e) {}
+
+function initSync() {
+  updateSync('recon');
+  try {
+    client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+      clientId: 'bano_simple_' + Math.random().toString(36).slice(2, 8),
+      clean: true,
+      connectTimeout: 7000,
+      reconnectPeriod: 2500
+    });
+
+    client.on('connect', () => {
+      updateSync('connected');
+      client.subscribe(TOPIC, { qos: 0 });
+    });
+
+    client.on('reconnect', () => updateSync('recon'));
+    client.on('offline', () => updateSync('offline'));
+
+    client.on('message', (topic, payload) => {
+      if (topic !== TOPIC) return;
+      try {
+        const incoming = JSON.parse(payload.toString());
+        if (typeof incoming.counter !== 'number') return;
+        S = {
+          counter: incoming.counter,
+          served: incoming.served || 0,
+          current: incoming.current || null
+        };
+        try { localStorage.setItem('bano_simple_state_v4_' + ROOM, JSON.stringify(S)); } catch(e) {}
+        render();
+      } catch(e) {}
+    });
+  } catch(e) {
+    updateSync('offline');
+  }
+}
+
+// Emisión inmediata no bloqueante (QoS 0)
+function broadcast(newState) {
+  S = newState;
+  try { localStorage.setItem('bano_simple_state_v4_' + ROOM, JSON.stringify(S)); } catch(e) {}
+  render();
+
+  if (client && client.connected) {
+    try {
+      client.publish(TOPIC, JSON.stringify(newState), { retain: true, qos: 0 });
+    } catch(e) {}
+  }
+}
+
+// Botón único para alternar Libre <-> En uso (nunca se queda pegado)
+function toggle() {
+  if (S.current) {
+    // Si está ocupado -> dejar libre
+    const newState = {
+      counter: S.counter,
+      served: (S.served || 0) + 1,
+      current: null
+    };
+    broadcast(newState);
+    toast('✅ ¡El baño quedó libre!');
+  } else {
+    // Si está libre -> marcar en uso
+    const nextNum = (S.counter || 0) + 1;
+    const newState = {
+      counter: nextNum,
+      served: S.served || 0,
+      current: { n: nextNum, start: Date.now() }
+    };
+    broadcast(newState);
+    toast('🚽 ¡Baño marcado como EN USO!');
+  }
+}
+
+function forceFree() {
+  const newState = {
+    counter: S.counter,
+    served: S.current ? (S.served || 0) + 1 : (S.served || 0),
+    current: null
+  };
+  broadcast(newState);
+  toast('✅ Baño liberado');
+}
+
+function render() {
+  const c = S.current;
+  const now = Date.now();
+  const door = $('door');
+  const btn = $('toggleBtn');
+
+  door.className = 'card door ' + (c ? 'busy' : 'free');
+  $('badge').textContent = c ? '⛔ EN USO' : '✅ LIBRE';
+  $('emo').textContent = c ? '💩' : '🚽';
+
+  if (c) {
+    const el = Math.max(0, now - c.start);
+    const m = Math.floor(el / 60000);
+    $('time').textContent = fmt(el);
+
+    // Escala del aro a 60 minutos
+    $('arc').style.strokeDashoffset = C * (1 - Math.min(el / MAX_MS, 1));
+
+    let jab = 'Turno #' + c.n + ' en uso';
+    if (m >= 60) jab = '🚨 ¡Más de 1 hora ocupado! Alguien que revise 🚪';
+    else if (m >= 40) jab = '⚠️ ¡Más de 40 min! ¿Te caíste al pozo? 💩';
+    else if (m >= 20) jab = '👀 Ya van más de 20 min... ¿todo bien?';
+    $('sub').textContent = jab;
+
+    btn.className = 'btn-toggle-busy';
+    btn.textContent = '✔ Marcar como LIBRE (Ya salí)';
+    document.title = '⛔ En uso ' + fmt(el) + ' · 💩';
+  } else {
+    $('time').textContent = 'LIBRE';
+    $('sub').textContent = 'Nadie adentro. ¡Baño disponible! 🏃💨';
+    $('arc').style.strokeDashoffset = 0;
+
+    btn.className = 'btn-toggle-free';
+    btn.textContent = '🟢 Marcar como EN USO (Entrar)';
+    document.title = '✅ Libre · 💩 Turnos del Baño';
+  }
+
+  $('sServed').textContent = S.served || 0;
+  $('sNext').textContent = '#' + (c ? c.n : ((S.counter || 0) + 1));
+}
+
+$('toggleBtn').onclick = toggle;
+$('forceFreeBtn').onclick = forceFree;
+
+$('theme').onclick = () => {
+  const d = document.documentElement;
+  const dark = d.dataset.theme === 'dark' || (!d.dataset.theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  d.dataset.theme = dark ? 'light' : 'dark';
+};
+
+const bg = $('bg');
+for (let i = 0; i < 14; i++) {
+  const s = document.createElement('span');
+  s.textContent = i % 4 === 0 ? '🧻' : '💩';
+  s.style.cssText = 'left:' + Math.random() * 100 + '%;font-size:' + (24 + Math.random() * 40) + 'px;--d:' + (14 + Math.random() * 16) + 's;--l:-' + Math.random() * 20 + 's';
+  bg.appendChild(s);
+}
+
+render();
+initSync();
+setInterval(render, 1000);
+</script>
+</body>
+</html>
