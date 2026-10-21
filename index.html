@@ -77,6 +77,7 @@ input:focus{outline:none;border-color:var(--brown)}
 <header>
 <h1><span class="p">💩</span> Turnos del Baño <span class="p" style="animation-delay:.6s">🚽</span></h1>
 <p>Saca tu número, espera tu turno y cuando salga el 💩 ¡libre!</p>
+<p id="sync" style="font-size:12px;opacity:.8"></p>
 </header>
 
 <section class="card door" id="door">
@@ -93,7 +94,7 @@ input:focus{outline:none;border-color:var(--brown)}
 <section class="card">
 <h2>🎟️ Sacar número</h2>
 <input type="text" id="name" maxlength="20" placeholder="Tu nombre (ej: Seba)" autocomplete="off">
-<div class="chips" id="chips"></div>
+
 <button class="pri" id="take">💩 Sacar número</button>
 </section>
 
@@ -112,27 +113,47 @@ input:focus{outline:none;border-color:var(--brown)}
 
 <script>
 const KEY='bano_turnos_v1', MINE='bano_mis_numeros_v1', C=326.7;
-let S={counter:0,queue:[],current:null,served:0}, mine=[], mins=10, lastFree=null;
+let S={counter:0,queue:[],current:null,served:0}, mine=[], lastFree=null, dbDoc=null, writing=false, again=false;
+const DEV=(()=>{try{let d=localStorage.getItem('bano_dev');if(!d){d=Math.random().toString(36).slice(2);localStorage.setItem('bano_dev',d)}return d}catch(e){return Math.random().toString(36).slice(2)}})();
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const fmt=ms=>{ms=Math.max(0,Math.ceil(ms/1000));return String(Math.floor(ms/60)).padStart(2,'0')+':'+String(ms%60).padStart(2,'0')};
+const fmt=ms=>{ms=Math.max(0,Math.floor(ms/1000));return String(Math.floor(ms/60)).padStart(2,'0')+':'+String(ms%60).padStart(2,'0')};
 
 function load(){try{const r=localStorage.getItem(KEY);if(r)S=JSON.parse(r);const m=localStorage.getItem(MINE);if(m)mine=JSON.parse(m)}catch(e){}}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S));localStorage.setItem(MINE,JSON.stringify(mine))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}push()}
+async function push(){
+  if(!dbDoc)return;
+  if(writing){again=true;return}
+  writing=true;
+  try{await dbDoc.set(JSON.parse(JSON.stringify(S)))}catch(e){toast('⚠️ No se pudo guardar en la nube')}
+  writing=false;
+  if(again){again=false;push()}
+}
+function sync(on){$('sync').textContent=on?'🌐 En vivo entre todos tus dispositivos':'📴 Solo este navegador (sin conexión compartida)'}
+async function initDb(){
+  try{
+    const db=await claude.use('db');
+    if(!db){sync(false);return}
+    const ref=db.doc('bano/estado');
+    ref.onSnapshot(snap=>{
+      S=Object.assign({counter:0,queue:[],current:null,served:0},snap.exists?JSON.parse(JSON.stringify(snap.data())):{});
+      dbDoc=ref;sync(true);render();
+    },()=>{dbDoc=null;sync(false)});
+  }catch(e){sync(false)}
+}
 function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('show'),2600)}
 
-function enter(t){S.current={n:t.n,name:t.name,start:Date.now(),end:Date.now()+t.mins*60000,total:t.mins*60000}}
+function enter(t){S.current={n:t.n,name:t.name,start:Date.now()}}
 function take(){
   const name=$('name').value.trim()||'Anónimo';
-  const t={n:++S.counter,name,mins};
-  mine.push(t.n);
+  const t={n:++S.counter,name,dev:DEV};
   if(!S.current&&S.queue.length===0){enter(t);toast('🚽 ¡Pasa! Eres el #'+t.n+' y el baño es tuyo')}
   else{S.queue.push(t);toast('🎟️ Tu número es el #'+t.n)}
   save();render()
 }
 function enterNext(n){if(S.current||!S.queue.length||S.queue[0].n!==n)return;enter(S.queue.shift());save();render()}
 function finish(){if(!S.current)return;S.current=null;S.served++;save();render()}
-function extend(){if(!S.current)return;S.current.end+=5*60000;S.current.total+=5*60000;save();render()}
+
 function cancel(n){S.queue=S.queue.filter(t=>t.n!==n);save();render()}
 
 function render(){
@@ -142,12 +163,13 @@ function render(){
   $('emo').textContent=c?'💩':'🚽';
   let acts='';
   if(c){
-    const rem=c.end-now;
-    $('time').textContent=fmt(rem);
-    $('arc').style.strokeDashoffset=C*(1-Math.max(0,rem)/c.total);
-    $('sub').innerHTML='Lo usa <b>#'+c.n+' '+esc(c.name)+'</b>';
-    acts='<button class="sec" data-a="ext">+5 min</button><button class="go" data-a="fin">✔ Ya salí</button>';
-    document.title='⛔ Ocupado '+fmt(rem)+' · 💩';
+    const el=now-c.start, m=Math.floor(el/60000);
+    $('time').textContent=fmt(el);
+    $('arc').style.strokeDashoffset=C*(1-Math.min(el/900000,1));
+    const jab=m>=30?' · 🚨 Mandemos a alguien a revisar':m>=15?' · ¿Todo bien ahí? 💩':'';
+    $('sub').innerHTML='Lo usa <b>#'+c.n+' '+esc(c.name)+'</b>'+jab;
+    acts='<button class="go" data-a="fin">✔ Ya salí</button>';
+    document.title='⛔ Ocupado '+fmt(el)+' · 💩';
   }else{
     $('time').textContent='LIBRE';
     $('sub').textContent=S.queue.length?'Turno del #'+S.queue[0].n+' ('+esc(S.queue[0].name)+')':'Nadie en fila. ¡Corre!';
@@ -155,11 +177,11 @@ function render(){
     document.title='✅ Libre · 💩 Turnos del Baño';
   }
   $('actions').innerHTML=acts;
-  let wait=c?Math.max(0,c.end-now):0, html='';
+  let html='';
   S.queue.forEach((t,i)=>{
-    const me=mine.includes(t.n);
-    html+='<div class="q'+(me?' me':'')+(i===0?' next':'')+'"><div class="num">#'+t.n+'</div><div class="who"><b>'+esc(t.name)+(me?' (tú)':'')+'</b><span>'+t.mins+' min · espera ~'+Math.ceil(wait/60000)+' min</span></div>'+(me?'<button class="danger" data-a="cancel" data-n="'+t.n+'">Salir</button>':'')+'</div>';
-    wait+=t.mins*60000;
+    const me=t.dev===DEV;
+    html+='<div class="q'+(me?' me':'')+(i===0?' next':'')+'"><div class="num">#'+t.n+'</div><div class="who"><b>'+esc(t.name)+(me?' (tú)':'')+'</b><span>Posición '+(i+1)+(i===0?' · el próximo 🎯':'')+'</span></div>'+(me?'<button class="danger" data-a="cancel" data-n="'+t.n+'">Salir</button>':'')+'</div>';
+    
   });
   $('queue').innerHTML=html||'<div class="empty">🧻 Fila vacía</div>';
   $('count').textContent=S.queue.length?'('+S.queue.length+')':'';
@@ -169,24 +191,24 @@ function render(){
   lastFree=isFree;
 }
 
-function tick(){if(S.current&&Date.now()>=S.current.end)finish();else render()}
+function tick(){render()}
 
 document.addEventListener('click',e=>{
   const b=e.target.closest('[data-a]');if(!b)return;
   const a=b.dataset.a,n=+b.dataset.n;
-  if(a==='fin')finish();else if(a==='ext')extend();else if(a==='enter')enterNext(n);else if(a==='cancel')cancel(n)
+  if(a==='fin')finish();else if(a==='enter')enterNext(n);else if(a==='cancel')cancel(n)
 });
 $('take').onclick=take;
 $('name').addEventListener('keydown',e=>{if(e.key==='Enter')take()});
-$('chips').innerHTML=[5,10,15,20].map(m=>'<button class="chip'+(m===10?' on':'')+'" data-m="'+m+'">'+m+' min<small>'+'💩'.repeat(m/5)+'</small></button>').join('');
-$('chips').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;mins=+c.dataset.m;document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('on',x===c))};
+
+
 $('theme').onclick=()=>{const d=document.documentElement,dark=getComputedStyle(d).getPropertyValue('--bg1').trim()==='#2a1810';d.dataset.theme=dark?'light':'dark'};
-window.addEventListener('storage',e=>{if(e.key===KEY){load();render()}});
+window.addEventListener('storage',e=>{if(e.key===KEY&&!dbDoc){load();render()}});
 
 const bg=$('bg');
 for(let i=0;i<14;i++){const s=document.createElement('span');s.textContent=i%4===0?'🧻':'💩';s.style.cssText='left:'+Math.random()*100+'%;--s:'+(24+Math.random()*40)+'px;--d:'+(14+Math.random()*16)+'s;--l:-'+Math.random()*20+'s';bg.appendChild(s)}
 
-load();render();setInterval(tick,1000);
+load();render();setInterval(tick,1000);initDb();
 </script>
 </body>
 </html>
